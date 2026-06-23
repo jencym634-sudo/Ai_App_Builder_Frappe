@@ -197,9 +197,12 @@ def heal_orphaned_doctypes():
                         healed_count += 1
                     except Exception:
                         # If we can't fix it, remove the corrupted metadata
+                        # Only delete if it's a custom AI App Builder DocType
                         try:
-                            frappe.delete_doc("DocType", dt.name, ignore_missing=True, force=True)
-                            healed_count += 1
+                            custom = frappe.db.get_value("DocType", dt.name, "custom")
+                            if custom:
+                                frappe.delete_doc("DocType", dt.name, ignore_missing=True, force=True, ignore_permissions=True)
+                                healed_count += 1
                         except Exception:
                             pass
 
@@ -232,9 +235,11 @@ def heal_orphaned_doctypes():
 
 def heal_broken_links():
     """
-    Detects Link/Table fields pointing to non-existent DocTypes and fixes them.
+    Detects Link/Table fields pointing to non-existent DocTypes and fixes them by creating missing target DocTypes.
     """
     try:
+        from ai_app_builder.ai_app_builder.api import create_master_doctype, create_child_table_doctype
+
         ai_doctypes = frappe.get_all(
             "DocType",
             filters={"module": "AI App Builder", "custom": 1},
@@ -251,12 +256,24 @@ def heal_broken_links():
 
                 for field in doc.fields:
                     if field.fieldtype in ("Link", "Table") and field.options:
-                        if field.options not in existing_doctypes:
-                            # Convert broken Link/Table to Data field
-                            field.fieldtype = "Data"
-                            field.options = ""
-                            modified = True
-                            healed += 1
+                        target = field.options
+                        if target not in existing_doctypes:
+                            # Create missing DocType in a correct logical manner to preserve the relationship
+                            created = False
+                            if field.fieldtype == "Link":
+                                created = create_master_doctype(target)
+                            elif field.fieldtype == "Table":
+                                created = create_child_table_doctype(target)
+                            
+                            if created:
+                                existing_doctypes.add(target)
+                                healed += 1
+                            else:
+                                # Fallback to converting to Data if creation fails
+                                field.fieldtype = "Data"
+                                field.options = ""
+                                modified = True
+                                healed += 1
 
                 if modified:
                     doc.save(ignore_permissions=True)

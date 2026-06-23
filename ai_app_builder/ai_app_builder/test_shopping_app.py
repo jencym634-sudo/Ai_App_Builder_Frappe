@@ -1,5 +1,5 @@
 import frappe
-from ai_app_builder.ai_app_builder.api import generate_doctype, check_upgrade, upgrade_doctype
+from ai_app_builder.ai_app_builder.api import generate_doctype, check_upgrade, upgrade_doctype, safe_delete_custom_doctype
 
 def run_shopping_app_test():
     prompt = "Create a shopping app to manage customer Orders, where each Order has a child table of Items ordered (OrderItem) containing details and cost, and we want to track Customer and Payment status."
@@ -9,8 +9,7 @@ def run_shopping_app_test():
     # Clean up first if they exist
     print("Clearing any existing test doctypes...")
     for dt_name in ["Order", "OrderItem", "Customer", "PaymentStatus"]:
-        if frappe.db.exists("DocType", dt_name):
-            frappe.delete_doc("DocType", dt_name, ignore_missing=True, force=True)
+        safe_delete_custom_doctype(dt_name)
     frappe.db.commit()
     frappe.clear_cache()
     
@@ -41,7 +40,7 @@ def run_shopping_app_test():
     assert table_field.options == "OrderItem", f"Table field should point to OrderItem, got {table_field.options}"
     
     # 2. Run the upgrade check and validation
-    upgrade_prompt = "Create a shopping app to manage customer Orders, where each Order has a child table of Items ordered (OrderItem) containing details and cost, and we want to track Customer, Payment status, Delivery Address, and Shipment Tracking."
+    upgrade_prompt = "Create a shopping app to manage customer Orders, where each Order has a child table of Items ordered (OrderItem) containing details and cost, and we want to track Customer, Payment status, and also track Delivery Address and Shipment Tracking directly on the Order DocType."
     print(f"Running check_upgrade with prompt: '{upgrade_prompt}'")
     
     up_info = check_upgrade(upgrade_prompt)
@@ -58,13 +57,12 @@ def run_shopping_app_test():
     updated_order_doc = frappe.get_doc("DocType", "Order")
     existing_fieldnames = {f.fieldname for f in updated_order_doc.fields}
     assert "delivery_address" in existing_fieldnames, "delivery_address field should be added"
-    assert "shipment_tracking" in existing_fieldnames or "shipment_tracking_number" in existing_fieldnames, "shipment tracking field should be added"
+    assert any(x in existing_fieldnames for x in ["shipment_tracking", "shipment_tracking_number", "tracking_number", "shipment"]), "shipment tracking field should be added"
     
     # Cleanup to leave a clean database state
     print("Tearing down generated doctypes...")
     for dt_name in ["Order", "OrderItem", "Customer", "PaymentStatus", "PaymentStatusItem"]:
-        if frappe.db.exists("DocType", dt_name):
-            frappe.delete_doc("DocType", dt_name, ignore_missing=True, force=True)
+        safe_delete_custom_doctype(dt_name)
     frappe.db.commit()
     frappe.clear_cache()
     

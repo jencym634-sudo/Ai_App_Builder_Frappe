@@ -7,6 +7,62 @@ from ai_app_builder.ai_app_builder.self_healer import (
 )
 
 # ---------------------------------------------------
+# Core Frappe DocType Blocklist
+# These are standard/system DocTypes that must NEVER be
+# created, deleted, or overwritten by the AI App Builder.
+# ---------------------------------------------------
+CORE_FRAPPE_DOCTYPES = frozenset({
+    # Core Framework
+    "DocType", "DocField", "DocPerm", "Module Def", "Page", "Report",
+    "Print Format", "Workspace", "Dashboard", "Dashboard Chart",
+    # User & Auth
+    "User", "Role", "Role Profile", "User Permission", "Has Role",
+    "User Type", "Session Default", "User Group",
+    # System
+    "System Settings", "Error Log", "Activity Log", "Scheduled Job Type",
+    "Comment", "Version", "File", "Communication",
+    "Notification Log", "Notification", "Email Queue",
+    # Data Import/Export
+    "Data Import", "Data Export",
+    # Website
+    "Web Page", "Blog Post", "Blog Category", "Website Settings",
+    # Workflow
+    "Workflow", "Workflow State", "Workflow Action",
+    # Translation
+    "Translation", "Language",
+    # Custom
+    "Custom Field", "Property Setter", "Client Script", "Server Script",
+    # Common naming collisions from AI prompts
+    "Employee", "Customer", "Supplier", "Item", "Sales Order",
+    "Purchase Order", "Sales Invoice", "Purchase Invoice",
+    "Journal Entry", "Payment Entry", "Stock Entry",
+    "Address", "Contact", "Company", "Cost Center",
+    "Project", "Task", "Timesheet", "Leave Application",
+    "Attendance", "Payroll Entry", "Salary Slip",
+})
+
+def is_core_doctype(name):
+    """Check if a DocType name is a core/standard Frappe DocType."""
+    return name in CORE_FRAPPE_DOCTYPES
+
+def safe_delete_custom_doctype(dt_name):
+    """
+    Safely deletes a DocType ONLY if it is a custom DocType
+    belonging to AI App Builder. Never touches core/standard DocTypes.
+    Returns True if deleted, False otherwise.
+    """
+    try:
+        if not frappe.db.exists("DocType", dt_name):
+            return False
+        custom, module = frappe.db.get_value("DocType", dt_name, ["custom", "module"]) or (0, "")
+        if custom and module == "AI App Builder":
+            frappe.delete_doc("DocType", dt_name, ignore_missing=True, force=True, ignore_permissions=True)
+            return True
+    except Exception:
+        pass
+    return False
+
+# ---------------------------------------------------
 # Sanitization and Cleaners
 # ---------------------------------------------------
 def sanitize_doctype_name(name):
@@ -571,9 +627,12 @@ def create_master_doctype(doctype_name, parsed_names=None):
     """
     Auto-generates a master DocType if referenced by a Link field but not yet existing.
     Uses standard title-based autonaming.
+    Skips creation if the name clashes with a core Frappe DocType.
     """
     doctype_name = sanitize_doctype_name(doctype_name)
     if frappe.db.exists("DocType", doctype_name):
+        return False
+    if is_core_doctype(doctype_name):
         return False
 
     doc_dict = {
@@ -617,9 +676,12 @@ def create_master_doctype(doctype_name, parsed_names=None):
 def create_child_table_doctype(doctype_name, fields=None, parsed_names=None):
     """
     Auto-generates a Child Table DocType (istable=1) for nested tables.
+    Skips creation if the name clashes with a core Frappe DocType.
     """
     doctype_name = sanitize_doctype_name(doctype_name)
     if frappe.db.exists("DocType", doctype_name):
+        return False
+    if is_core_doctype(doctype_name):
         return False
 
     if not fields:
@@ -762,6 +824,45 @@ def heal_schema(schema, existing_doctypes=None):
                 opt_sanitized = sanitize_doctype_name(options)
                 if opt_sanitized in created_child_tables:
                     f["options"] = created_child_tables[opt_sanitized]
+
+    # Auto-link orphaned child tables to their parent DocTypes
+    schema_child_tables = [dt for dt in doctypes if dt.get("istable") == 1]
+    for ct in schema_child_tables:
+        ct_name = sanitize_doctype_name(ct["name"])
+        if ct_name not in table_targets:
+            parent_dt = None
+            for dt in doctypes:
+                dt_name = sanitize_doctype_name(dt["name"])
+                if dt.get("istable") != 1 and ct_name.startswith(dt_name):
+                    parent_dt = dt
+                    break
+            if not parent_dt:
+                primary_name = schema.get("primary_doctype")
+                if primary_name and primary_name in schema_dts:
+                    parent_dt = schema_dts[primary_name]
+                else:
+                    for dt in doctypes:
+                        if dt.get("istable") != 1:
+                            parent_dt = dt
+                            break
+            if parent_dt:
+                if "fields" not in parent_dt:
+                    parent_dt["fields"] = []
+                parent_fields = parent_dt["fields"]
+                fieldname = sanitize_fieldname(ct["name"])
+                exists = any(
+                    f.get("fieldname") == fieldname or 
+                    (f.get("fieldtype") == "Table" and sanitize_doctype_name(f.get("options") or "") == ct_name)
+                    for f in parent_fields
+                )
+                if not exists:
+                    parent_fields.append({
+                        "label": ct["name"],
+                        "fieldname": fieldname,
+                        "fieldtype": "Table",
+                        "options": ct["name"]
+                    })
+                    table_targets.add(ct_name)
 
     # Combine original (potentially modified) doctypes and newly created child table doctypes
     schema["doctypes"] = doctypes + new_doctypes
@@ -1090,10 +1191,7 @@ def _upgrade_doctype_internal(prompt, simplified=False, absolute_fallback=False)
         frappe.db.rollback()
         # Clean up any physically created database tables and metadata
         for dt_name in reversed(created_doctypes):
-            try:
-                frappe.delete_doc("DocType", dt_name, ignore_missing=True, force=True)
-            except Exception:
-                pass
+            safe_delete_custom_doctype(dt_name)
         frappe.db.commit()
         raise e
 
@@ -1336,13 +1434,10 @@ def _generate_doctype_internal(prompt, simplified=False, absolute_fallback=False
     created_doctypes = []
     
     try:
-        # Pre-cleanup in case stub exists
+        # Pre-cleanup in case stub exists (only delete custom AI App Builder DocTypes)
         for name in parsed_names:
-            if name != primary_name and name not in ("User", "Role", "DocType"):
-                try:
-                    frappe.delete_doc("DocType", name, ignore_missing=True, force=True)
-                except Exception:
-                    pass
+            if name != primary_name:
+                safe_delete_custom_doctype(name)
         
         # 1. Resolve and create any external (non-planned) referenced Master/Child DocTypes first
         for dt in parsed["doctypes"]:
@@ -1397,10 +1492,7 @@ def _generate_doctype_internal(prompt, simplified=False, absolute_fallback=False
         frappe.db.rollback()
         # Clean up any physically created database tables and metadata
         for dt_name in reversed(created_doctypes):
-            try:
-                frappe.delete_doc("DocType", dt_name, ignore_missing=True, force=True)
-            except Exception:
-                pass
+            safe_delete_custom_doctype(dt_name)
         frappe.db.commit()
         raise e
 

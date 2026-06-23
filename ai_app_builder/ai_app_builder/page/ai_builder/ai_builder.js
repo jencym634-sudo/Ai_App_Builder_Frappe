@@ -710,7 +710,7 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
                         frappe.call({
                             method: 'ai_app_builder.ai_app_builder.api.clear_cache',
                             callback: function() {
-                                window.location.href = '/app/List/' + encodeURIComponent(stats.primary_doctype);
+                                frappe.set_route('List', stats.primary_doctype);
                             }
                         });
                     } 
