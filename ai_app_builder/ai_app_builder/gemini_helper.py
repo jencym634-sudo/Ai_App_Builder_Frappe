@@ -3,13 +3,22 @@ import json
 import time
 import re
 import sys
+import os
+import frappe
 
 # ---------------------------------------------------
 # OpenRouter Client Setup
 # ---------------------------------------------------
 # OpenRouter Base URL and pre-configured free API key
+api_key = (
+    frappe.conf.get("openrouter_api_key")
+    or os.environ.get("OPENROUTER_API_KEY")
+    or "sk-or-v1-placeholder-please-set-in-common-site-config-json"
+)
+
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
+    api_key=api_key
     )
 
 # Ordered list of free models for fallback failover orchestration

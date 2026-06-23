@@ -297,6 +297,75 @@ def run_all_tests():
         results.append(("validate_table_requires_options", "FAIL", str(e)))
     
     # =========================================
+    # TEST 13: Robustness with None/missing labels
+    # =========================================
+    try:
+        from ai_app_builder.ai_app_builder.api import section_exists
+        
+        # Test section_exists with fields having None or missing labels
+        test_sb_fields = [
+            {"fieldtype": "Section Break", "label": None},
+            {"fieldtype": "Section Break"},
+            {"fieldtype": "Section Break", "label": "Upgraded Fields"},
+            {"fieldtype": "Data", "fieldname": "title", "label": None}
+        ]
+        # Should not crash and should return True when searching for 'Upgraded Fields'
+        assert section_exists(test_sb_fields, "Upgraded Fields") is True
+        # Should return False when searching for something that doesn't exist
+        assert section_exists(test_sb_fields, "Nonexistent") is False
+        
+        # Test apply_rule_engine with fields having None or missing labels
+        test_rule_fields = [
+            {"label": None, "fieldtype": "Data"},
+            {"label": "Salary", "fieldtype": "Data"},
+            {"fieldtype": "Data"}
+        ]
+        # Should not crash and should correctly process fields that have labels
+        refined = apply_rule_engine("TestDoc", test_rule_fields)
+        salary_f = next((f for f in refined if f["fieldname"] == "salary"), None)
+        assert salary_f is not None
+        assert salary_f["fieldtype"] == "Currency"
+        
+        results.append(("none_label_robustness", "PASS", ""))
+    except Exception as e:
+        results.append(("none_label_robustness", "FAIL", traceback.format_exc()))
+    
+    # =========================================
+    # TEST 14: Self-Healing Flow Verification
+    # =========================================
+    try:
+        from ai_app_builder.ai_app_builder.api import analyze_prompt, generate_doctype
+        
+        # Test analyze_prompt handles extreme/None prompt by self-healing to absolute fallback
+        res = analyze_prompt(None)
+        assert res is not None
+        assert "primary_doctype" in res
+        assert len(res["doctypes"]) > 0
+        
+        # Test generate_doctype handles extreme/None prompt by self-healing to basic ERPEntity
+        res_gen = generate_doctype(None)
+        assert res_gen is not None
+        assert res_gen.get("success") is True
+        assert res_gen.get("primary_doctype") == "ERPEntity"
+        
+        results.append(("self_healing_verification", "PASS", ""))
+    except Exception as e:
+        results.append(("self_healing_verification", "FAIL", traceback.format_exc()))
+    
+    # =========================================
+    # TEST 15: clear_cache API verification
+    # =========================================
+    try:
+        from ai_app_builder.ai_app_builder.api import clear_cache
+        res_cache = clear_cache()
+        assert res_cache is True
+        results.append(("clear_cache_api", "PASS", ""))
+    except Exception as e:
+        results.append(("clear_cache_api", "FAIL", traceback.format_exc()))
+    
+    
+    
+    # =========================================
     # PRINT RESULTS
     # =========================================
     print("\n" + "=" * 60)

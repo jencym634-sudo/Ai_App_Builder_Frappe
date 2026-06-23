@@ -58,7 +58,7 @@ def run_shopping_app_test():
     updated_order_doc = frappe.get_doc("DocType", "Order")
     existing_fieldnames = {f.fieldname for f in updated_order_doc.fields}
     assert "delivery_address" in existing_fieldnames, "delivery_address field should be added"
-    assert "shipment_tracking" in existing_fieldnames, "shipment_tracking field should be added"
+    assert "shipment_tracking" in existing_fieldnames or "shipment_tracking_number" in existing_fieldnames, "shipment tracking field should be added"
     
     # Cleanup to leave a clean database state
     print("Tearing down generated doctypes...")

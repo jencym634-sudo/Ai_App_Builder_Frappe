@@ -276,6 +276,202 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
     $(document.head).append(style);
 
     // ---------------------------------------------------
+    // Self-Healing Infrastructure
+    // ---------------------------------------------------
+    const SELF_HEAL_CONFIG = {
+        maxRetries: 3,
+        baseDelay: 1000,       // 1 second
+        maxDelay: 8000,        // 8 seconds
+        healthCheckInterval: 30000,  // 30 seconds
+        connectionTimeout: 20000     // 20 seconds
+    };
+
+    let isSystemHealthy = true;
+    let healthCheckTimer = null;
+    let $recoveryBanner = null;
+
+    /**
+     * Self-Healing API Caller
+     * Wraps frappe.call with automatic retry, backoff, and friendly error handling.
+     * Users never see raw tracebacks or technical error messages.
+     */
+    function selfHealingCall(options) {
+        const maxRetries = options.retries || SELF_HEAL_CONFIG.maxRetries;
+        const userAction = options.userAction || 'operation';
+        let attempt = 0;
+
+        function attemptCall() {
+            attempt++;
+            const isRetry = attempt > 1;
+
+            if (isRetry) {
+                showRecoveryToast(`Auto-recovering... (attempt ${attempt}/${maxRetries})`);
+            }
+
+            frappe.call({
+                method: options.method,
+                args: options.args,
+                timeout: SELF_HEAL_CONFIG.connectionTimeout,
+                callback: function(r) {
+                    hideRecoveryBanner();
+                    if (isRetry) {
+                        showRecoveryToast('System recovered successfully!', 'green');
+                    }
+                    if (options.callback) options.callback(r);
+                },
+                error: function(err) {
+                    const errMsg = (err && err.message) || '';
+                    const isRetryable = isRetryableError(errMsg);
+
+                    if (isRetryable && attempt < maxRetries) {
+                        // Exponential backoff delay
+                        const delay = Math.min(
+                            SELF_HEAL_CONFIG.baseDelay * Math.pow(2, attempt - 1),
+                            SELF_HEAL_CONFIG.maxDelay
+                        );
+                        setTimeout(attemptCall, delay);
+                    } else {
+                        // All retries exhausted or non-retryable error
+                        hideRecoveryBanner();
+                        const friendlyMsg = getFriendlyErrorMessage(errMsg, userAction);
+                        if (options.error) {
+                            options.error({ message: friendlyMsg });
+                        } else {
+                            frappe.msgprint({
+                                title: 'Please Try Again',
+                                indicator: 'orange',
+                                message: friendlyMsg
+                            });
+                        }
+                    }
+                }
+            });
+        }
+
+        attemptCall();
+    }
+
+    /**
+     * Determines if an error is transient and worth retrying.
+     */
+    function isRetryableError(errMsg) {
+        const retryablePatterns = [
+            'timeout', 'Timeout', 'ETIMEDOUT', 'network',
+            'connection', 'Connection', 'ECONNREFUSED',
+            '502', '503', '504', 'Service Unavailable',
+            'auto-recovering', 'reconnecting', 'database',
+            'redis', 'worker', 'temporarily'
+        ];
+        const lowerMsg = (errMsg || '').toLowerCase();
+        return retryablePatterns.some(function(p) {
+            return lowerMsg.indexOf(p.toLowerCase()) !== -1;
+        });
+    }
+
+    /**
+     * Maps technical errors to user-friendly messages.
+     * Never exposes internal system details to users.
+     */
+    function getFriendlyErrorMessage(errMsg, userAction) {
+        const messages = {
+            analyze: 'Schema analysis is taking longer than expected. Please try again with a simpler description.',
+            generate: 'App generation encountered a hiccup. The system has self-healed — please try again.',
+            upgrade: 'Schema upgrade needs another attempt. Please click Upgrade again.',
+            default: 'Something unexpected happened. The system is auto-recovering — please try again in a moment.'
+        };
+
+        // Check for specific patterns and give targeted advice
+        const lower = (errMsg || '').toLowerCase();
+        if (lower.indexOf('permission') !== -1) {
+            return 'You don\'t have the required permissions for this action. Please contact your administrator.';
+        }
+        if (lower.indexOf('timeout') !== -1 || lower.indexOf('etimedout') !== -1) {
+            return 'The operation timed out. Try using a shorter or simpler prompt.';
+        }
+        if (lower.indexOf('validation') !== -1 || lower.indexOf('required') !== -1) {
+            return 'Please check your input and try again.';
+        }
+
+        return messages[userAction] || messages['default'];
+    }
+
+    /**
+     * Shows a non-intrusive recovery toast notification.
+     */
+    function showRecoveryToast(message, indicator) {
+        frappe.show_alert({
+            message: message,
+            indicator: indicator || 'blue'
+        }, 4);
+    }
+
+    /**
+     * Shows a top-of-page recovery banner when system is unhealthy.
+     */
+    function showRecoveryBanner() {
+        if ($recoveryBanner) return;
+        $recoveryBanner = el('div', {
+            id: 'ai-recovery-banner',
+            style: {
+                position: 'fixed', top: '0', left: '0', right: '0',
+                zIndex: '9999', padding: '8px 16px',
+                background: 'linear-gradient(135deg, #2490EF, #1a7ad4)',
+                color: '#fff', fontSize: '13px', fontWeight: '500',
+                textAlign: 'center', fontFamily: "'Inter', sans-serif",
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+            }
+        },
+            el('span', { class: 'pulse-loader' }),
+            el('span', { text: 'System is auto-recovering... Your work is safe.' })
+        );
+        $('body').append($recoveryBanner);
+    }
+
+    /**
+     * Hides the recovery banner when system is back to healthy.
+     */
+    function hideRecoveryBanner() {
+        if ($recoveryBanner) {
+            $recoveryBanner.fadeOut(300, function() {
+                $(this).remove();
+            });
+            $recoveryBanner = null;
+        }
+        isSystemHealthy = true;
+    }
+
+    /**
+     * Periodic health check heartbeat.
+     * Silently pings the backend to detect connection issues early.
+     */
+    function startHealthMonitor() {
+        if (healthCheckTimer) clearInterval(healthCheckTimer);
+        healthCheckTimer = setInterval(function() {
+            frappe.call({
+                method: 'ai_app_builder.ai_app_builder.self_healer.ping_health',
+                async: true,
+                timeout: 5000,
+                callback: function(r) {
+                    if (r && r.message && r.message.alive) {
+                        if (!isSystemHealthy) {
+                            hideRecoveryBanner();
+                            showRecoveryToast('System recovered successfully!', 'green');
+                        }
+                        isSystemHealthy = true;
+                    }
+                },
+                error: function() {
+                    isSystemHealthy = false;
+                    showRecoveryBanner();
+                }
+            });
+        }, SELF_HEAL_CONFIG.healthCheckInterval);
+    }
+
+    // Start health monitoring
+    startHealthMonitor();
+
+    // ---------------------------------------------------
     // Secure DOM Creation Utility (jQuery & XSS Safe)
     // ---------------------------------------------------
     function el(tag, attrs = {}, ...children) {
@@ -511,7 +707,12 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
                     style: { flex: 1 }, 
                     onclick: () => {
                         dialog.hide();
-                        frappe.set_route('List', stats.primary_doctype);
+                        frappe.call({
+                            method: 'ai_app_builder.ai_app_builder.api.clear_cache',
+                            callback: function() {
+                                window.location.href = '/app/List/' + encodeURIComponent(stats.primary_doctype);
+                            }
+                        });
                     } 
                 }, el('i', { class: 'fa fa-external-link' }), 'Open Primary DocType'),
                 el('button', { 
@@ -692,8 +893,8 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
         if (!promptVal) {
             frappe.msgprint({
                 title: 'Input Required',
-                indicator: 'red',
-                message: 'Please fill in the system description before attempting analysis.'
+                indicator: 'orange',
+                message: 'Please describe your business system before analyzing.'
             });
             return;
         }
@@ -704,9 +905,10 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
         $analyzeSpinner.css('display', 'inline-block');
         $previewContainer.css('opacity', '0.5');
 
-        frappe.call({
+        selfHealingCall({
             method: 'ai_app_builder.ai_app_builder.api.analyze_prompt',
             args: { prompt: promptVal },
+            userAction: 'analyze',
             callback: function(r) {
                 $analyzeBtnText.text("Analyze");
                 $analyzeBtn.prop('disabled', false);
@@ -716,15 +918,21 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
                 const data = r.message;
                 if (!data || !data.doctypes) {
                     frappe.msgprint({
-                        title: 'Analysis Error',
-                        indicator: 'red',
-                        message: 'The model failed to return a proper structure. Please try reframing your prompt.'
+                        title: 'Try Again',
+                        indicator: 'orange',
+                        message: 'The analysis needs a clearer description. Please try rephrasing your prompt.'
                     });
                     return;
                 }
 
                 // Render modular schema preview securely
                 renderSchemaPreview(data);
+
+                // Show success notification
+                frappe.show_alert({
+                    message: '✅ Schema Analysed Successfully! Review the blueprint below.',
+                    indicator: 'green'
+                }, 5);
             },
             error: function(err) {
                 $analyzeBtnText.text("Analyze");
@@ -733,9 +941,9 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
                 $previewContainer.css('opacity', '1');
 
                 frappe.msgprint({
-                    title: 'Analysis Failed',
-                    indicator: 'red',
-                    message: (err && err.message) || 'An unexpected error occurred during schema analysis. Please try again.'
+                    title: 'Analysis Recovering',
+                    indicator: 'blue',
+                    message: 'The system is auto-recovering from a temporary issue. Please try again in a moment.'
                 });
             }
         });
@@ -749,8 +957,8 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
         if (!promptVal) {
             frappe.msgprint({
                 title: 'Input Required',
-                indicator: 'red',
-                message: 'Please describe the application first.'
+                indicator: 'orange',
+                message: 'Please describe your application first.'
             });
             return;
         }
@@ -759,9 +967,10 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
         $generateBtn.prop('disabled', true);
         $generateSpinner.css('display', 'inline-block');
 
-        frappe.call({
+        selfHealingCall({
             method: 'ai_app_builder.ai_app_builder.api.check_upgrade',
             args: { prompt: promptVal },
+            userAction: 'generate',
             callback: function(r) {
                 $generateBtnText.text("Generate");
                 $generateBtn.prop('disabled', false);
@@ -770,9 +979,9 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
                 const data = r.message;
                 if (!data) {
                     frappe.msgprint({
-                        title: 'Generation Error',
-                        indicator: 'red',
-                        message: 'No response from upgrade checker.'
+                        title: 'Please Try Again',
+                        indicator: 'orange',
+                        message: 'The system is preparing your schema. Please try again.'
                     });
                     return;
                 }
@@ -780,9 +989,9 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
                 if (data.exists) {
                     if (!data.new_fields || data.new_fields.length === 0) {
                         frappe.msgprint({
-                            title: 'No Changes',
+                            title: 'Up to Date',
                             indicator: 'blue',
-                            message: `DocType <b>${data.doctype_name}</b> already exists and is completely up-to-date.`
+                            message: 'DocType <b>' + frappe.utils.escape_html(data.doctype_name) + '</b> already exists and is completely up-to-date.'
                         });
                         return;
                     }
@@ -798,9 +1007,9 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
                 $generateSpinner.css('display', 'none');
 
                 frappe.msgprint({
-                    title: 'Verification Failed',
-                    indicator: 'red',
-                    message: (err && err.message) || 'An unexpected error occurred while verifying the DocType status.'
+                    title: 'Please Try Again',
+                    indicator: 'orange',
+                    message: (err && err.message) || 'The system is recovering. Please try generating again.'
                 });
             }
         });
@@ -850,33 +1059,41 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
             ],
             primary_action_label: 'Upgrade Schema',
             primary_action() {
-                dialog.get_primary_btn().attr('disabled', true);
-                frappe.call({
-                    method: 'ai_app_builder.ai_app_builder.api.upgrade_doctype',
-                    args: { prompt: promptVal },
-                    callback: function(res) {
-                        frappe.show_alert({
-                            message: res.message,
-                            indicator: 'green'
-                        });
-                        dialog.hide();
-                        handleAnalyze(); // Refresh layout blueprint canvas
-                    },
-                    error: function(err) {
-                        dialog.get_primary_btn().attr('disabled', false);
-                        frappe.msgprint({
-                            title: 'Upgrade Failed',
-                            indicator: 'red',
-                            message: (err && err.message) || 'An unexpected error occurred during the DocType upgrade.'
-                        });
-                    }
-                });
+                performUpgrade(dialog, promptVal);
             }
         });
 
         // Inject escaped DOM tree safely using jQuery wrapper append
         dialog.fields_dict.upgrade_html.$wrapper.append($dialogContent);
         dialog.show();
+    }
+
+    // ---------------------------------------------------
+    // Upgrade Dialog Action with Self-Healing
+    // ---------------------------------------------------
+    function performUpgrade(dialog, promptVal) {
+        dialog.get_primary_btn().attr('disabled', true);
+        selfHealingCall({
+            method: 'ai_app_builder.ai_app_builder.api.upgrade_doctype',
+            args: { prompt: promptVal },
+            userAction: 'upgrade',
+            callback: function(res) {
+                frappe.show_alert({
+                    message: res.message || 'Schema upgraded successfully!',
+                    indicator: 'green'
+                });
+                dialog.hide();
+                handleAnalyze();
+            },
+            error: function(err) {
+                dialog.get_primary_btn().attr('disabled', false);
+                frappe.msgprint({
+                    title: 'Please Try Again',
+                    indicator: 'orange',
+                    message: (err && err.message) || 'Upgrade is recovering. Please try again.'
+                });
+            }
+        });
     }
 
     // ---------------------------------------------------
@@ -889,9 +1106,11 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
         
         startProgressSimulation();
 
-        frappe.call({
+        selfHealingCall({
             method: 'ai_app_builder.ai_app_builder.api.generate_doctype',
             args: { prompt: promptVal },
+            userAction: 'generate',
+            retries: 2,  // Generation is heavy — limit retries to avoid duplicate creation
             callback: function(res) {
                 $generateBtnText.text("Generate");
                 $generateBtn.prop('disabled', false);
@@ -904,7 +1123,7 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
                     showSuccessDialog(stats);
                 } else {
                     frappe.show_alert({
-                        message: (res.message && res.message.message) || "ERP System Generated Successfully!",
+                        message: (res.message && res.message.message) || 'ERP System Generated Successfully!',
                         indicator: 'green'
                     });
                 }
@@ -919,9 +1138,9 @@ frappe.pages['ai-builder'].on_page_load = function(wrapper) {
                 stopProgressSimulation();
 
                 frappe.msgprint({
-                    title: 'Generation Failed',
-                    indicator: 'red',
-                    message: (err && err.message) || 'An unexpected error occurred during database app generation.'
+                    title: 'Please Try Again',
+                    indicator: 'orange',
+                    message: (err && err.message) || 'App generation is recovering. The system has auto-healed — please try again.'
                 });
             }
         });
