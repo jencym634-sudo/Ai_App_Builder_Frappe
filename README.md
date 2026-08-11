@@ -2,7 +2,7 @@
   <img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f2027,50:7aa2f7,100:2c5364&height=220&section=header&text=AI%20App%20Builder&fontSize=45&fontColor=ffffff"/>
 </p>
 
-<h1 align="center">🤖 AI-Powered ERP Application Builder</h1>
+<h1 align="center"> AI-Powered ERP Application Builder</h1>
 
 <p align="center">
 Generate complete ERP applications from natural language using AI and the Frappe Framework.
@@ -19,7 +19,7 @@ Generate complete ERP applications from natural language using AI and the Frappe
 
 ---
 
-# 📖 Overview
+# Overview
 
 AI App Builder is an intelligent application generation platform built using the **Frappe Framework** that converts natural language business requirements into complete ERP applications.
 
@@ -27,26 +27,26 @@ Instead of manually creating DocTypes, Workflows, Reports, APIs, and backend log
 
 ---
 
-# ✨ Features
+#  Features
 
-- 🤖 Natural Language → ERP Application
-- 🏗 Automatic App Generation
-- 📄 AI Generated DocTypes
-- 🔗 Child Tables & Relationships
-- ⚙ Workflow Generation
-- 📊 Reports & Dashboards
-- 🖨 Print Formats
-- 🌐 REST API Generation
-- 🎨 Jinja Templates
-- ✅ Validation Engine
-- 🩹 Self-Healing Engine
-- 🛡 Safe Schema Upgrade Engine
-- 🔄 Multi-LLM Support
-- 🚀 OpenRouter Integration
+-  Natural Language → ERP Application
+-  Automatic App Generation
+-  AI Generated DocTypes
+-  Child Tables & Relationships
+-  Workflow Generation
+-  Reports & Dashboards
+-  Print Formats
+-  REST API Generation
+-  Jinja Templates
+-  Validation Engine
+-  Self-Healing Engine
+-  Safe Schema Upgrade Engine
+-  Multi-LLM Support
+-  OpenRouter Integration
 
 ---
 
-# 🏛 Architecture
+#  Architecture
 
 ```text
                  User Prompt
@@ -81,7 +81,7 @@ Instead of manually creating DocTypes, Workflows, Reports, APIs, and backend log
 
 ---
 
-# 🚀 Generation Pipeline
+#  Generation Pipeline
 
 ```text
 Natural Language Prompt
@@ -110,7 +110,7 @@ Install & Migrate
 
 ---
 
-# 🧠 AI Capabilities
+#  AI Capabilities
 
 The platform supports multiple Large Language Models through **OpenRouter**.
 
@@ -126,7 +126,7 @@ The platform supports multiple Large Language Models through **OpenRouter**.
 
 ---
 
-# 🛠 Technology Stack
+#  Technology Stack
 
 ## Backend
 
@@ -150,7 +150,7 @@ The platform supports multiple Large Language Models through **OpenRouter**.
 
 ---
 
-# 📂 Project Structure
+#  Project Structure
 
 ```text
 ai_app_builder/
@@ -170,7 +170,7 @@ ai_app_builder/
 
 ---
 
-# 🎯 Example
+#  Example
 
 ### Input
 
@@ -194,15 +194,15 @@ Build a School Management ERP
 
 ---
 
-# 🎥 Demo
+#  Demo
 
 Watch the complete project demonstration below.
 
-📺 **Demo Video:** https://drive.google.com/file/d/1tcJL8huEDe9zJFskPdN5oW24DTmHpdPZ/view?usp=drive_link
+ **Demo Video:** https://drive.google.com/file/d/1tcJL8huEDe9zJFskPdN5oW24DTmHpdPZ/view?usp=drive_link
 
 
 
-# 🗺 Roadmap
+#  Roadmap
 
 - ✅ AI Integration Layer
 - ✅ Blueprint Generation
@@ -215,7 +215,7 @@ Watch the complete project demonstration below.
 
 ---
 
-# 🤝 Contributing
+#  Contributing
 
 Contributions, feature requests, and suggestions are welcome.
 
@@ -223,21 +223,21 @@ If you find a bug or have an idea for improvement, feel free to open an Issue or
 
 ---
 
-# 📜 License
+#  License
 
 MIT License
 
 ---
 
-# 👨‍💻 Author
+#  Author
 
 **Jency M**
 
 Python Software Engineer • Frappe Framework Developer • AI-Powered ERP Applications
 
-- 💼 LinkedIn: https://linkedin.com/in/jency-m-31291735a
-- 💻 GitHub: https://github.com/jencym634-sudo
-- 📧 Email: jencym634@gmail.com
+-  LinkedIn: https://linkedin.com/in/jency-m-31291735a
+-  GitHub: https://github.com/jencym634-sudo
+-  Email: jencym634@gmail.com
 
 ---
 
