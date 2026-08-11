@@ -204,14 +204,14 @@ Watch the complete project demonstration below.
 
 #  Roadmap
 
-- ✅ AI Integration Layer
-- ✅ Blueprint Generation
-- ✅ Validation Engine
-- ✅ Self-Healing Engine
-- ✅ Safe Schema Upgrade
-- ⏳ Authentication
-- ⏳ Visual Blueprint Editor
-- ⏳ Plugin Marketplace
+-  AI Integration Layer
+-  Blueprint Generation
+-  Validation Engine
+-  Self-Healing Engine
+-  Safe Schema Upgrade
+-  Authentication
+-  Visual Blueprint Editor
+-  Plugin Marketplace
 
 ---
 
